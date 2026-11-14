@@ -53,7 +53,13 @@ if ($ghId -and $login) {
 # One commit holding HEAD's tree, on top of the public branch (if any).
 $parent = git rev-parse --verify --quiet refs/heads/public
 $tree = git rev-parse 'HEAD^{tree}'
-$commit = if ($parent) { $Message | git commit-tree $tree -p $parent } else { $Message | git commit-tree $tree }
+# The message goes through a UTF-8 file: Windows PowerShell pipes text to
+# native programs as ASCII, which turned every Chinese character into '?'.
+$msgFile = Join-Path ([IO.Path]::GetTempPath()) "supernet-publish-$PID.txt"
+[IO.File]::WriteAllText($msgFile, "$Message`n", (New-Object Text.UTF8Encoding $false))
+try {
+    $commit = if ($parent) { git commit-tree $tree -p $parent -F $msgFile } else { git commit-tree $tree -F $msgFile }
+} finally { Remove-Item $msgFile -ErrorAction SilentlyContinue }
 if ($parent -and (git rev-parse "$parent^{tree}") -eq $tree) { '公开版本已经是这个内容，不用发布'; exit 0 }
 if ($DryRun) { "（演练）会发布提交 $commit"; exit 0 }
 git update-ref refs/heads/public $commit

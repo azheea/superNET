@@ -135,6 +135,8 @@ scripts/deploy-coord.ps1   # 装成 systemd 服务 supernet-coord，并打印邀
 
 ### 3. 客户端
 
+各平台的安装包在 [Releases](https://github.com/azheea/superNET/releases) 下载，由 GitHub Actions 自动构建（[`.github/workflows/release.yml`](.github/workflows/release.yml)）。
+
 | 平台 | 安装 | 使用 |
 |---|---|---|
 | Windows | 运行 `superNET.exe` | “节点”页粘贴链接 → 连接；要用组网，打开 TUN 模式，在“组网”页粘贴邀请链接 |
