@@ -2,6 +2,31 @@
 
 验证记录分两类，分开写：自动测试（单元/协议/端到端）和真实程序或设备上的验收。没跑过的检查不写成通过。
 
+## 2026-11-15：公开仓库与自动发布
+
+- 公开仓库 github.com/azheea/superNET：
+  - 只放快照提交；本地历史里有服务器和家庭网络地址，不公开。
+  - 文档、示例数据和测试里的地址换成文档专用段（203.0.113.0/24、198.51.100.0/24、2001:db8::/32、example.com）。
+  - `scripts/publish.ps1` 发布前先用 `local/publish-deny.txt` 和 `local/` 里的真实密钥值检查。
+  - 发布后从 GitHub 克隆一份重新检查：0 命中。
+- 第一次发布的提交说明成了 `????`：Windows PowerShell 经管道把文字按 ASCII 交给 git。现在改为通过 UTF-8 文件传入，并重新生成了那个提交。
+- GitHub Actions（`.github/workflows/release.yml`）：Windows、Linux x86_64/arm64、macOS 通用版、Android、iOS（只检查编译）。推送 `v*` 标签时自动发布 Release。
+- 试跑中发现并修掉的问题：
+  - shell 脚本里变量名紧跟中文时，bash 在 C 语言环境下把中文的字节当成变量名的一部分。iOS 构建因此失败；节点安装脚本 `node/install.sh` 在这类服务器上也会出错。已全部加上花括号。
+  - Windows 文件名不分大小写，`supernet.exe` 覆盖了 `superNET.exe`：命令行版改名为 `supernet-cli.exe`，打包时检查。
+  - `gradlew` 没有可执行位。
+- Android 正式签名：经用户同意，把签名密钥放进仓库的 Secrets。CI 打出的 APK 证书指纹与本地正式版一致（6af0d9f1…），可以覆盖安装。
+- v0.1.0 已发布，共 13 个文件：
+  - Windows zip；
+  - macOS dmg、zip 和通用版命令行；
+  - Linux deb（amd64、arm64）、静态命令行和协调服务（x86_64、aarch64）；
+  - Android APK（arm64、x86_64）；
+  - SHA256SUMS.txt。
+- 检查过的内容：
+  - Windows zip 里两个 exe 都在；
+  - Linux 命令行版是静态链接，内嵌了网页控制台；
+  - deb 里有应用和 supernet-cli，依赖声明正确。
+
 ## 2026-11-14（续三）：Linux 图形版、无界面服务器组网、网页控制台
 
 ### 测试环境

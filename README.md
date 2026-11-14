@@ -79,7 +79,7 @@ superNET 只用**你自己的服务器**，把两件常用的事放进同一个�
 | **Android** | 应用（VpnService，前台服务） | ✅ | ✅ | ✅ | 模拟器，含局域网直连组网 |
 | **macOS** | 应用 + 命令行 | ✅ 系统代理 | ✅ 需 root，经命令行版 | ✅ | M4 MacBook Air 实机 |
 | **Linux 服务器** | 命令行 + 网页控制台 + systemd | ✅ | ✅ 全局或只组网 | ✅ | 服务器和 Ubuntu 虚拟机 |
-| **Linux 桌面** | deb 包（应用 + 命令行） | ✅ | ✅ 需 root，经命令行版 | ✅ | Ubuntu 24.04 arm64 |
+| **Linux 桌面** | deb 包（应用 + 命令行，amd64 / arm64） | ✅ | ✅ 需 root，经命令行版 | ✅ | Ubuntu 24.04 arm64 实机运行；amd64 由 CI 构建 |
 | **iOS** | SwiftUI 应用 + Packet Tunnel 扩展 | ✅ | ✅ | ✅ | 编译通过，模拟器跑过界面；装到真机需要付费开发者账号 |
 
 ## 工作原理
@@ -293,7 +293,6 @@ scripts/cargo.ps1 test --workspace
   - 在 NAT 实验环境（网络命名空间）里验证过：两个锥形 NAT 能打通，对称 NAT 会回退到中继；
   - 公网上验证过 IPv6 直连；
   - 中国移动 4G 下的真机打洞还没测。
-- **Linux 图形包**：目前只构建过 arm64 的 deb。x86_64 版要在 x86_64 机器上运行 `build-linux-app.sh`。
 - **Hysteria2**：暂不支持 obfs 混淆。
 - **macOS 和 Linux 桌面的 TUN 模式**：需要用 sudo 运行命令行版，应用本身没有提权助手。
 
