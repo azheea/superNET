@@ -58,7 +58,7 @@ if [ "$kind" = device ]; then
         lib="$root/target/aarch64-apple-ios/release/libsupernet_ffi.a"
     fi
     [ -f "${lib:-}" ] || { echo "没有 libsupernet_ffi.a（见本文件开头）" >&2; exit 1; }
-    echo "== 隧道扩展（$lib）"
+    echo "== 隧道扩展（${lib}）"
     ext="$app/PlugIns/PacketTunnel.appex"
     mkdir -p "$ext"
     swiftc -module-name PacketTunnel -parse-as-library -application-extension \

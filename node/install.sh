@@ -71,7 +71,7 @@ case "${ID:-} ${ID_LIKE:-}" in
     *) die "目前只支持 Debian / Ubuntu 和 CentOS / Rocky / Alma（检测到 ${PRETTY_NAME:-未知系统}）" ;;
 esac
 EL_MAJOR=${VERSION_ID%%.*}
-log "系统：$PRETTY_NAME，内核 $(uname -r)，内存 $(free -m | awk '/Mem:/{print $2}') MB"
+log "系统：${PRETTY_NAME}，内核 $(uname -r)，内存 $(free -m | awk '/Mem:/{print $2}') MB"
 
 VIRT=$(systemd-detect-virt 2>/dev/null || echo unknown)
 case "$VIRT" in
@@ -107,11 +107,11 @@ if ! ip link show wg0 >/dev/null 2>&1; then
 fi
 case "$WAN" in
     tun*|sing*|utun*)
-        warn "默认路由走 $WAN（像是 sing-box 的 TUN）。节点流量会被它接管，请确认这是你想要的。" ;;
+        warn "默认路由走 ${WAN}（像是 sing-box 的 TUN）。节点流量会被它接管，请确认这是你想要的。" ;;
 esac
 for svc in s-ui sing-box x-ui xray; do
     if systemctl is-active --quiet "$svc" 2>/dev/null; then
-        log "检测到正在运行的 $svc：只会新增 wg0、一张独立的 nftables 表和内核参数，不会改动它"
+        log "检测到正在运行的 ${svc}：只会新增 wg0、一张独立的 nftables 表和内核参数，不会改动它"
     fi
 done
 
@@ -266,7 +266,7 @@ if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
     ufw route allow in on wg0 out on "$WAN" >/dev/null
 fi
 if systemctl is-active --quiet firewalld 2>/dev/null; then
-    log "firewalld 已启用：放行 UDP $PORT，wg0 加入 trusted 区"
+    log "firewalld 已启用：放行 UDP ${PORT}，wg0 加入 trusted 区"
     firewall-cmd -q --permanent --add-port="$PORT/udp"
     firewall-cmd -q --permanent --zone=trusted --add-interface=wg0
     firewall-cmd -q --reload
