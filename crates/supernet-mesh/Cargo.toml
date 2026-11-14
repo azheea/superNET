@@ -1,0 +1,27 @@
+[package]
+name = "supernet-mesh"
+description = "superNET virtual network: coordinator, P2P paths and relays"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["device"]
+# The device side needs boringtun (which builds C code via ring); the
+# coordinator does not, so it cross-compiles to a static Linux binary.
+device = ["dep:boringtun", "dep:supernet-netstack"]
+
+[dependencies]
+anyhow.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+base64.workspace = true
+rand_core.workspace = true
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+chacha20poly1305 = "0.10"
+blake2 = "0.10"
+boringtun = { version = "0.7", default-features = false, optional = true }
+supernet-netstack = { path = "../supernet-netstack", optional = true }
+socket2 = "0.6"

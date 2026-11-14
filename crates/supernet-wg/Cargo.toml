@@ -1,0 +1,18 @@
+[package]
+name = "supernet-wg"
+description = "Userspace WireGuard tunnel (boringtun + smoltcp)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+boringtun = { version = "0.7", default-features = false }
+smoltcp = { version = "0.14", default-features = false, features = ["std", "log", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp", "socket-udp", "async"] }
+rand_core.workspace = true
+socket2 = "0.6"
+tokio.workspace = true
+supernet-netstack = { path = "../supernet-netstack" }
+tracing.workspace = true
+
+[dev-dependencies]
+log = { version = "0.4", features = ["std"] }

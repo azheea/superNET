@@ -1,0 +1,17 @@
+[package]
+name = "supernet-netstack"
+description = "Userspace TCP/IP stack for TUN mode, and interface pinning"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+smoltcp = { version = "0.14", default-features = false, features = ["std", "log", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp", "async"] }
+tokio.workspace = true
+tracing.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Networking_WinSock", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Foundation"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

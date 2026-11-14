@@ -1,0 +1,19 @@
+[package]
+name = "supernet-ffi"
+description = "C interface to the superNET core, for the iOS Network Extension"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+supernet-core = { path = "../supernet-core" }
+supernet-tun = { path = "../supernet-tun" }
+supernet-netstack = { path = "../supernet-netstack" }
+supernet-mesh = { path = "../supernet-mesh" }
+anyhow.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true

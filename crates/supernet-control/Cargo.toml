@@ -1,0 +1,18 @@
+[package]
+name = "supernet-control"
+description = "What the superNET app and the headless web console control: engine, profile, system proxy, TUN mode, virtual network"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+supernet-core = { path = "../supernet-core" }
+supernet-sysproxy = { path = "../supernet-sysproxy" }
+supernet-tun = { path = "../supernet-tun" }
+supernet-netstack = { path = "../supernet-netstack" }
+supernet-mesh = { path = "../supernet-mesh" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true

@@ -1,0 +1,8 @@
+# Shell scripts run on Linux/macOS: keep LF even in Windows checkouts and archives.
+*.sh text eol=lf
+# Apple tools (codesign, plutil) reject CRLF in these.
+*.entitlements text eol=lf
+*.plist text eol=lf
+*.swift text eol=lf
+ios/*.h text eol=lf
+ios/**/*.h text eol=lf

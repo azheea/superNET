@@ -1,0 +1,23 @@
+[package]
+name = "supernet-core"
+description = "superNET engine: rules, DNS, inbound proxies and outbounds"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+supernet-wg = { path = "../supernet-wg" }
+supernet-hy2 = { path = "../supernet-hy2" }
+supernet-netstack = { path = "../supernet-netstack" }
+aho-corasick = "1"
+anyhow.workspace = true
+base64.workspace = true
+ipnet = { version = "2", features = ["serde"] }
+maxminddb = "0.32"
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml_ng = "0.10"
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+rand_core.workspace = true

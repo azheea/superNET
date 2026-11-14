@@ -1,0 +1,25 @@
+[package]
+name = "supernet-cli"
+description = "Run the superNET engine headless and print statistics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "supernet"
+path = "src/main.rs"
+
+[dependencies]
+supernet-core = { path = "../supernet-core" }
+supernet-control = { path = "../supernet-control" }
+supernet-hy2 = { path = "../supernet-hy2" }
+supernet-netstack = { path = "../supernet-netstack" }
+supernet-tun = { path = "../supernet-tun" }
+supernet-mesh = { path = "../supernet-mesh" }
+anyhow.workspace = true
+rand_core.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

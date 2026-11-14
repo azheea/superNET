@@ -1,0 +1,27 @@
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+/* Only the app's own provider fills the window, not the popup mount nodes
+   Fluent adds to <body> (see main.tsx). */
+#root > .fui-FluentProvider {
+  height: 100%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.mono {
+  font-family: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+}
+
+/* Traffic flowing along topology links. */
+@keyframes sn-flow {
+  to {
+    stroke-dashoffset: -28;
+  }
+}

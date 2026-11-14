@@ -1,0 +1,17 @@
+[package]
+name = "supernet-testnode"
+description = "A WireGuard test node with built-in services, for local end-to-end tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+supernet-core = { path = "../supernet-core" }
+supernet-wg = { path = "../supernet-wg" }
+anyhow.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+supernet-netstack = { path = "../supernet-netstack" }
+smoltcp = { version = "0.14", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "socket-tcp", "socket-udp"] }

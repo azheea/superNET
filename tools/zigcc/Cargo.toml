@@ -1,0 +1,8 @@
+[package]
+name = "zigcc"
+description = "zig cc/ar wrapper for cross-compiling superNET from Windows"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
