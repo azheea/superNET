@@ -46,11 +46,15 @@ jobs:
         run: |
           $d = New-Item -ItemType Directory -Force out/superNET-windows-x64
           Copy-Item target/release/supernet-app.exe "$d/superNET.exe"
-          Copy-Item target/release/supernet.exe "$d/supernet.exe"
+          # Not "supernet.exe": Windows file names ignore case, that would replace superNET.exe.
+          Copy-Item target/release/supernet.exe "$d/supernet-cli.exe"
           Copy-Item local/wintun/wintun.dll, local/wintun/LICENSE.txt $d
           Rename-Item "$d/LICENSE.txt" wintun-LICENSE.txt
           if (Test-Path target/release/WebView2Loader.dll) { Copy-Item target/release/WebView2Loader.dll $d }
           Copy-Item README.md, LICENSE-MIT, LICENSE-APACHE $d
+          $names = (Get-ChildItem $d).Name
+          foreach ($n in 'superNET.exe', 'supernet-cli.exe', 'wintun.dll') { if ($names -notcontains $n) { throw "missing $n" } }
+          if ((Get-Item "$d/superNET.exe").Length -eq (Get-Item "$d/supernet-cli.exe").Length) { throw 'superNET.exe and supernet-cli.exe are the same file' }
           Compress-Archive -Path "$d/*" -DestinationPath out/superNET-windows-x64.zip
       - uses: actions/upload-artifact@v4
         with: { name: windows, path: out/superNET-windows-x64.zip, if-no-files-found: error }
@@ -230,7 +234,7 @@ jobs:
 
           | 平台 | 文件 |
           |---|---|
-          | Windows x64 | `superNET-windows-x64.zip`：解压后运行 `superNET.exe`。TUN 模式需要管理员权限，`wintun.dll` 已附带 |
+          | Windows x64 | `superNET-windows-x64.zip`：解压后运行 `superNET.exe`（命令行版是 `supernet-cli.exe`）。TUN 模式需要管理员权限，`wintun.dll` 已附带 |
           | macOS（Apple 芯片和 Intel） | `superNET-macos-universal.dmg`。未公证，第一次请右键选“打开”。TUN 和组网用应用包里的 `supernet-cli`（需要 sudo） |
           | Linux 桌面 | `superNET_*_amd64.deb` / `superNET_*_arm64.deb`：`sudo apt install ./superNET_*.deb` |
           | Linux 服务器 | `supernet-linux-x86_64` / `supernet-linux-aarch64`：静态程序，`sudo ./supernet-linux-x86_64 join 邀请链接 --install-service` |
