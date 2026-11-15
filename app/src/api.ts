@@ -17,7 +17,7 @@ export interface Status {
 
 export interface NodeStatus {
   name: string;
-  kind: "wireguard" | "hysteria2";
+  kind: "wireguard" | "hysteria2" | "tuic";
   endpoint: string;
   active: boolean;
   since_handshake_secs: number | null;

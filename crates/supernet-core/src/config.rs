@@ -121,6 +121,49 @@ pub enum NodeKind {
     Wireguard(WireGuardNode),
     /// QUIC + TLS 1.3; tolerates the lossy paths where WireGuard stalls.
     Hysteria2(Hysteria2Node),
+    /// TUIC v5: QUIC + TLS 1.3, authenticated by UUID and a token derived
+    /// from the TLS session (the password is never sent).
+    Tuic(TuicNode),
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TuicNode {
+    /// `host:port` of the server.
+    pub server: String,
+    pub uuid: String,
+    pub password: String,
+    /// TLS server name; defaults to the host of `server`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sni: Option<String>,
+    /// SHA-256 of the server certificate (hex), for self-signed servers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pin_sha256: Option<String>,
+    /// Accept any certificate (encrypted but unauthenticated). Avoid.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub insecure: bool,
+}
+
+impl TuicNode {
+    pub fn validate(&self) -> Result<()> {
+        let (host, port) = self.server.rsplit_once(':').context("服务器地址应为 host:端口")?;
+        if host.is_empty() || port.parse::<u16>().map_or(true, |p| p == 0) {
+            bail!("服务器地址“{}”无效", self.server);
+        }
+        supernet_hy2::tuic::parse_uuid(&self.uuid)?;
+        if self.password.is_empty() {
+            bail!("缺少密码");
+        }
+        if let Some(pin) = &self.pin_sha256 {
+            supernet_hy2::parse_hex_sha256(pin)?;
+        }
+        Ok(())
+    }
+
+    /// Host part of `server`, without IPv6 brackets.
+    pub fn host(&self) -> &str {
+        let host = self.server.rsplit_once(':').map_or(self.server.as_str(), |(h, _)| h);
+        host.trim_start_matches('[').trim_end_matches(']')
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -298,6 +341,7 @@ impl Profile {
             match &node.kind {
                 NodeKind::Wireguard(wg) => wg.validate(),
                 NodeKind::Hysteria2(hy) => hy.validate(),
+                NodeKind::Tuic(t) => t.validate(),
             }
             .with_context(|| format!("节点“{}”", node.name))?;
         }

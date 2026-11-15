@@ -12,6 +12,7 @@ use supernet_core::Profile;
 
 mod join;
 mod mesh_probe;
+mod server;
 mod tun_test;
 mod web;
 
@@ -35,6 +36,7 @@ async fn main() -> Result<()> {
                 mesh_only = true;
             }
             "join" => return join::run(args),
+            "server" => return server::run(args),
             // The app's UI in a browser, for machines without a screen.
             "--web" => {
                 let v = args.next().unwrap_or_else(|| "127.0.0.1:9090".into());
@@ -60,6 +62,7 @@ async fn main() -> Result<()> {
                 println!("    --mesh-only：只让组网走虚拟网卡，不改默认路由和 DNS（服务器用）");
                 println!("    --web [IP:]端口：网页控制台（默认 127.0.0.1:9090，带令牌）；--web-token 指定令牌");
                 println!("supernet join 邀请链接 [--name 设备名] [--profile 路径] [--install-service [--no-web]]   # 加入组网：生成密钥、写配置，可装成 systemd 服务（默认带网页控制台 127.0.0.1:9090）");
+                println!("supernet server add hy2|tuic [--name 名称] [--port 端口]   # 把这台机器变成代理节点（Linux / Windows），打印分享链接");
                 println!("supernet pin-cert host:port [sni]   # 打印 Hysteria2 服务器证书的 SHA-256");
                 println!("supernet mesh-probe --invite LINK [--key FILE] [--name N] [--seconds 60] [--only-ipv6]   # 不开 TUN，只看组网路径");
                 println!("supernet tun-test --profile P [--seconds 45] [--log FILE] [--wintun DLL]   # 限时 TUN 自检（管理员）");

@@ -12,6 +12,8 @@
 //!
 //! The server certificate is checked against a pinned SHA-256 or the web PKI;
 //! skipping verification is possible but explicit.
+//!
+//! The [`tuic`] module is the TUIC v5 client, on the same QUIC settings.
 
 use std::io;
 use std::net::SocketAddr;
@@ -29,6 +31,8 @@ use rustls::{DigitallySignedStruct, SignatureScheme};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, ReadBuf};
 use tokio::sync::Mutex;
+
+pub mod tuic;
 
 const TCP_REQUEST_ID: u64 = 0x401;
 const AUTH_STATUS_OK: u16 = 233;
@@ -82,7 +86,7 @@ impl Hy2Client {
         let socket = supernet_netstack::sysnet::udp_bind(bind).context("创建 QUIC 端点")?;
         let mut endpoint =
             quinn::Endpoint::new(quinn::EndpointConfig::default(), None, socket, Arc::new(quinn::TokioRuntime)).context("创建 QUIC 端点")?;
-        endpoint.set_default_client_config(client_config(&cfg)?);
+        endpoint.set_default_client_config(client_config(&cfg.cert)?);
         Ok(Self { cfg, endpoint, session: Mutex::new(None) })
     }
 
@@ -385,12 +389,14 @@ impl AsyncWrite for Hy2Stream {
     }
 }
 
-fn client_config(cfg: &Hy2Config) -> Result<quinn::ClientConfig> {
+/// QUIC client settings shared by Hysteria2 and TUIC: TLS 1.3, ALPN `h3`,
+/// the certificate check, large windows and BBR.
+pub(crate) fn client_config(cert: &CertCheck) -> Result<quinn::ClientConfig> {
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let builder = rustls::ClientConfig::builder_with_provider(provider.clone())
         .with_protocol_versions(&[&rustls::version::TLS13])
         .context("TLS 配置")?;
-    let mut tls = match &cfg.cert {
+    let mut tls = match cert {
         CertCheck::WebPki => {
             let roots = rustls::RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
             builder.with_root_certificates(roots).with_no_client_auth()

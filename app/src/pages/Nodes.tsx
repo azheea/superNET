@@ -181,8 +181,9 @@ export function NodesPage() {
 }
 
 function HandshakeBadge({ node }: { node: NodeStatus }) {
-  if (node.kind === "hysteria2") {
-    return node.active ? <Badge appearance="tint" color="success">Hysteria2 · 已连接</Badge> : <Badge appearance="tint" color="informative">Hysteria2</Badge>;
+  if (node.kind === "hysteria2" || node.kind === "tuic") {
+    const label = node.kind === "tuic" ? "TUIC" : "Hysteria2";
+    return node.active ? <Badge appearance="tint" color="success">{label} · 已连接</Badge> : <Badge appearance="tint" color="informative">{label}</Badge>;
   }
   if (!node.active) return <Badge appearance="tint" color="informative">未使用</Badge>;
   const secs = node.since_handshake_secs;
@@ -245,7 +246,7 @@ function AddDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => v
                   setText(d.value);
                   setError(null);
                 }}
-                placeholder={"粘贴 WireGuard 配置：\n[Interface]\nPrivateKey = …\nAddress = 10.66.0.2/32\n\n[Peer]\nPublicKey = …\nEndpoint = 服务器:51820\n\n或 supernet:// 链接\n或 Hysteria2 分享链接：hysteria2://密码@域名:端口/?sni=…"}
+                placeholder={"粘贴 WireGuard 配置：\n[Interface]\nPrivateKey = …\nAddress = 10.66.0.2/32\n\n[Peer]\nPublicKey = …\nEndpoint = 服务器:51820\n\n或 supernet:// 链接\n或 Hysteria2 分享链接：hysteria2://密码@域名:端口/?sni=…\n或 TUIC 分享链接：tuic://UUID:密码@域名:端口/?sni=…"}
               />
             </Field>
           </DialogContent>

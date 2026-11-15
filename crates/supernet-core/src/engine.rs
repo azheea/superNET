@@ -74,7 +74,7 @@ pub struct Status {
 #[derive(Clone, Debug, Serialize)]
 pub struct NodeStatus {
     pub name: String,
-    /// `wireguard` or `hysteria2`.
+    /// `wireguard`, `hysteria2` or `tuic`.
     pub kind: &'static str,
     pub endpoint: String,
     /// The tunnel has been created (first use or a latency test).
@@ -266,6 +266,7 @@ impl Engine {
                 let (kind, endpoint) = match &cfg.kind {
                     NodeKind::Wireguard(wg) => ("wireguard", wg.endpoint.clone()),
                     NodeKind::Hysteria2(hy) => ("hysteria2", hy.server.clone()),
+                    NodeKind::Tuic(t) => ("tuic", t.server.clone()),
                 };
                 let node = snap.nodes.get(&cfg.name);
                 let stats = node.and_then(|n| n.stats());

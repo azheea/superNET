@@ -2,6 +2,53 @@
 
 验证记录分两类，分开写：自动测试（单元/协议/端到端）和真实程序或设备上的验收。没跑过的检查不写成通过。
 
+## 2026-11-15（续）：服务端一键建节点（Hysteria2 / TUIC）、TUIC 客户端、更多架构
+
+### `supernet server`（Linux / Windows）
+
+- `supernet server add hy2|tuic`：
+  - 下载 sing-box 1.14.4，按代码里固定的各平台 SHA-256（取自 GitHub Release）校验；
+  - 生成自签名证书和凭据，写配置并用 `sing-box check` 检查；
+  - 装成独立服务，开本机防火墙；
+  - 打印带证书指纹的分享链接。
+  - 另有 `list`、`show`、`remove`、`status`、`restart`、`run`（前台）。
+- Windows 本机（`--no-service`）：sing-box 下载并校验通过；客户端经生成的 Hysteria2 节点访问百度返回 200。
+- **真实 Linux 服务器（RHEL，SELinux enforcing）**，实测中发现并修掉：
+  1. `/etc/supernet`（WireGuard 节点脚本建的）只有 root 能进，服务用户读不到配置（`status=203/EXEC`）：服务端文件改放 `/etc/supernet-proxy`。
+  2. sing-box 放在 `/etc` 下时标签是 `etc_t`，服务以 `init_t` 运行，SELinux 默默拒绝它的出站连接（`connect: permission denied`）：改装成 `/usr/local/bin/supernet-sing-box`（`bin_t`），并调用 restorecon。
+  3. 每次重写配置都会变回只有 root 能读：每次写配置后重新给服务用户组读权限；服务启动检查改为持续确认为 active；添加失败时自动回滚。
+  4. 新增 `supernet server restart`：重写配置、修复权限、重启。
+- 跨公网实测（这台电脑 → 服务器）：
+  - Hysteria2 节点的出口是服务器的公网地址，测速 427 ms；
+  - TUIC 节点的出口是服务器的公网地址，测速 213 ms；
+  - TUIC 的 UDP（经服务器查 8.8.8.8 的 DNS）3/3 正确，约 190–210 ms。
+- `remove` 删掉最后一个协议时，服务和 systemd 单元一起删除。全程 s-ui、协调服务都是 active。
+- 服务器上留下的文件：
+  - `/etc/supernet/server`：第一次失败的尝试，自动化里的 `rm -rf` 被安全检查拦下，没删；
+  - `/etc/supernet-proxy`：已经没有协议了；
+  - `/usr/local/bin/supernet-sing-box`；
+  - 系统用户 `supernet-proxy`；
+  - `/tmp/supernet-srvtest`。
+
+### TUIC v5 客户端
+
+- `supernet-hy2::tuic`：
+  - 认证令牌用 TLS 导出的密钥材料（标签为 UUID，上下文为密码），密码本身不发送；
+  - Connect 用双向流；
+  - UDP 用数据报，超长分片，按关联号分发；
+  - 有心跳，结束时发 Dissociate。
+- 接入核心库：配置、校验、出站、UDP、证书指纹首次信任；`tuic://` 导入导出（有 pinSHA256 时忽略 allow_insecure）；界面显示 TUIC 节点。
+- 对官方 sing-box 实测：UDP DNS 3/3，TCP 200；经网页控制台 API 导入链接后，引擎日志确认流量走 `代理 → tuic`。
+
+### 构建与发布
+
+- 新增架构：Windows ARM64（windows-11-arm 原生构建）、Windows x86、Linux armv7（静态命令行和协调服务，Zig 交叉编译，CI 里用 QEMU 运行一次）、Android armv7。CI 全部通过。
+- 缓存：sccache（项目自己的 crate）、Gradle、apt；rust-cache 失败也保存，打标签时不另存。
+- 加缓存后两次运行的耗时：
+  - Linux 和 Windows x64 快了约 1–3 分钟；
+  - macOS、Android 的波动比缓存带来的差别还大；
+  - 主要耗时仍是完整 LTO。
+
 ## 2026-11-15：公开仓库与自动发布
 
 - 公开仓库 github.com/azheea/superNET：

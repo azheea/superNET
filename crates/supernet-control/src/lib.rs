@@ -700,7 +700,7 @@ impl Controller {
         let node = p.node(&name).ok_or_else(|| format!("没有节点“{name}”"))?;
         let config = match &node.kind {
             NodeKind::Wireguard(wg) => wgconf::render(wg),
-            NodeKind::Hysteria2(_) => wgconf::to_link(node),
+            NodeKind::Hysteria2(_) | NodeKind::Tuic(_) => wgconf::to_link(node),
         };
         Ok(Exported { config, link: wgconf::to_link(node) })
     }

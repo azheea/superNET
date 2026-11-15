@@ -19,6 +19,8 @@ supernet-mesh = { path = "../supernet-mesh" }
 anyhow.workspace = true
 rand_core.workspace = true
 serde_json.workspace = true
+sha2 = "0.10"
+rcgen = "0.13"
 tokio.workspace = true
 
 [target.'cfg(unix)'.dependencies]

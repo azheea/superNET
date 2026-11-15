@@ -12,7 +12,7 @@
 
 superNET 只用**你自己的服务器**，把两件常用的事放进同一个应用：
 
-- **分流代理**：命中规则的流量经你的服务器出去（WireGuard 或 Hysteria2），其余流量照常走本机网络。
+- **分流代理**：命中规则的流量经你的服务器出去（WireGuard、Hysteria2 或 TUIC），其余流量照常走本机网络。
 - **虚拟组网**：你的每台设备都有一个固定的虚拟地址（`10.66.0.x`），不管在哪个网络里都能互相访问。能直连就点对点；连不上时由网内其他设备中继，最后才用服务器中继。全程端到端加密。
 
 界面上有实时拓扑图，能看到每两台设备之间现在走的是哪条路、延迟多少、流量多大。
@@ -36,7 +36,8 @@ superNET 只用**你自己的服务器**，把两件常用的事放进同一个�
 
 - **节点**：
   - WireGuard（用户态，[boringtun](https://github.com/cloudflare/boringtun) + [smoltcp](https://github.com/smoltcp-rs/smoltcp)）；
-  - 原生 Hysteria2（QUIC + TLS 1.3），适合丢包多的跨境线路，兼容 s-ui、sing-box 和官方服务端。
+  - 原生 Hysteria2（QUIC + TLS 1.3），适合丢包多的跨境线路，兼容 s-ui、sing-box 和官方服务端；
+  - 原生 TUIC v5（QUIC + TLS 1.3），用 UUID 和从 TLS 会话导出的令牌认证，密码本身不发送；UDP 用 QUIC 数据报转发。
 - **规则**：
   - `DOMAIN`、`DOMAIN-SUFFIX`、`DOMAIN-KEYWORD`、`IP-CIDR`、`IP-CIDR6`、`GEOIP`、`DST-PORT`、`RULE-SET`、`MATCH`；
   - 规则、全局、直连三种模式；
@@ -45,7 +46,7 @@ superNET 只用**你自己的服务器**，把两件常用的事放进同一个�
   - 本地 HTTP/SOCKS5 代理，可以自动设为系统代理，退出时恢复原设置；
   - **TUN 模式**：一块虚拟网卡接管所有程序的流量（包括 UDP 和游戏）。
 - **DNS**：假 IP（`198.18.0.0/15`）让域名规则在 TUN 模式下照样生效。Windows 上还用 WFP 拦截其他网卡的 DNS 查询，防止泄漏。
-- **只用加密传输**：出口只有 WireGuard 和 Hysteria2，不支持 SOCKS 这类明文上游。
+- **只用加密传输**：出口只有 WireGuard、Hysteria2 和 TUIC，不支持 SOCKS 这类明文上游。
 
 ### 虚拟组网
 
@@ -93,7 +94,7 @@ flowchart LR
         ctl --> mesh["supernet-mesh<br/>组网"]
         tun --> ns["supernet-netstack<br/>用户态 TCP/IP"] --> core
         tun -- "10.66.0.0/24" --> mesh
-        core -- 命中规则 --> out["WireGuard / Hysteria2"]
+        core -- 命中规则 --> out["WireGuard / Hysteria2 / TUIC"]
         core -- 其他 --> direct["直连"]
     end
     out --> srv["你的服务器"]
@@ -121,7 +122,17 @@ sudo bash node/install.sh          # 内核 WireGuard + NAT，UDP 51820
 sudo supernet-node peer add 电脑   # 输出配置、二维码和 supernet:// 链接
 ```
 
-**Hysteria2 节点**：已有的 s-ui、sing-box 或官方服务端都能用。导入它的 `hysteria2://` 分享链接即可。
+**Hysteria2 / TUIC 节点，一条命令**（Linux 或 Windows 服务器）：
+
+```bash
+sudo supernet server add hy2      # 或 tuic；打印分享链接，粘贴到 superNET 的“节点”页
+```
+
+- 协议由官方开源的 [sing-box](https://github.com/SagerNet/sing-box) 提供：固定版本、按 SHA-256 校验后安装，作为独立服务运行（Linux 是 systemd 服务 `supernet-proxy`，只有绑定端口的权限；Windows 是开机启动的系统任务）。不会动同一台机器上已有的 s-ui、sing-box 或 xray。
+- 用自签名证书，分享链接里带证书指纹，superNET 会严格校验。
+- 自动挑一个空闲的 UDP 端口，并在本机防火墙（firewalld / ufw / Windows 防火墙）放行；云服务器还要在安全组里放行。
+- 管理：`supernet server list | show 名称 | remove 名称 | status | restart`。
+- 已有的 s-ui、sing-box 或官方服务端也能用，导入它们的 `hysteria2://`、`tuic://` 分享链接即可。
 
 ### 2. 部署协调服务（要用组网时）
 
@@ -220,7 +231,8 @@ supernet --profile profile.yaml [--tun | --mesh-only] [--web [IP:]端口] [--sta
 supernet join 邀请链接 [--name 设备名] [--profile 路径] [--install-service [--no-web]]
 supernet mesh-probe --invite 邀请链接     # 不开 TUN，只看组网路径和候选地址
 supernet tun-test --profile P            # 限时 TUN 自检：DNS、直连、节点、组网
-supernet pin-cert host:port [sni]        # 打印 Hysteria2 服务器证书的 SHA-256
+supernet pin-cert host:port [sni]        # 打印 Hysteria2 / TUIC 服务器证书的 SHA-256
+supernet server add hy2|tuic [--port 端口] [--name 名称]   # 把这台机器变成代理节点
 ```
 
 协调服务的管理命令：`supernet-coord invite | reset-invite | members | remove 10.66.0.x`。
@@ -254,7 +266,7 @@ scripts/cargo.ps1 test --workspace
 |---|---|
 | `crates/supernet-core` | 配置、规则引擎、DNS（含假 IP）、HTTP/SOCKS5 入站、出站、连接统计 |
 | `crates/supernet-wg` | 用户态 WireGuard 出站（boringtun + smoltcp） |
-| `crates/supernet-hy2` | 原生 Hysteria2 客户端 |
+| `crates/supernet-hy2` | 原生 Hysteria2 和 TUIC v5 客户端 |
 | `crates/supernet-netstack` | TUN 模式的用户态 TCP/IP 协议栈；把自己的连接固定到物理网卡，避免绕回 TUN |
 | `crates/supernet-tun` | TUN 网卡、路由和 DNS 接管（Windows / Linux / macOS / Android / iOS） |
 | `crates/supernet-mesh` | 组网：协调协议、选路、打洞、中继 |
@@ -294,6 +306,9 @@ scripts/cargo.ps1 test --workspace
   - 公网上验证过 IPv6 直连；
   - 中国移动 4G 下的真机打洞还没测。
 - **Hysteria2**：暂不支持 obfs 混淆。
+- **TUIC**：只支持 `udp_relay_mode=native`（QUIC 数据报），不支持 `quic` 模式。
+- **`supernet server` 在 Windows 上**：生成配置、下载并校验 sing-box、前台运行（`--no-service` 加 `supernet server run`）都实测过；注册开机任务和防火墙规则需要管理员权限，还没在真机上验证。
+- **`supernet server` 下载 sing-box 要访问 GitHub**：国内机器可能下载不了，可以先手动下载，再用环境变量 `SUPERNET_SING_BOX=路径` 指定。
 - **macOS 和 Linux 桌面的 TUN 模式**：需要用 sudo 运行命令行版，应用本身没有提权助手。
 
 ## 许可证

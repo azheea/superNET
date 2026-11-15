@@ -9,7 +9,7 @@ use anyhow::{bail, Context, Result};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::OnceCell;
 
-use crate::config::{decode_key, Hysteria2Node, NodeConfig, NodeKind, WireGuardNode};
+use crate::config::{decode_key, Hysteria2Node, NodeConfig, NodeKind, TuicNode, WireGuardNode};
 use crate::dns::{self, Cache, DirectResolver};
 use crate::target::{Host, Target};
 
@@ -47,6 +47,7 @@ pub async fn connect_direct(target: &Target, resolved: Option<&[IpAddr]>, resolv
 pub enum Node {
     Wireguard(WgNode),
     Hysteria2(Hy2Node),
+    Tuic(TuicOut),
 }
 
 impl Node {
@@ -54,6 +55,7 @@ impl Node {
         match &cfg.kind {
             NodeKind::Wireguard(wg) => Node::Wireguard(WgNode::new(cfg.name.clone(), wg.clone())),
             NodeKind::Hysteria2(hy) => Node::Hysteria2(Hy2Node { name: cfg.name.clone(), config: hy.clone(), client: OnceCell::new() }),
+            NodeKind::Tuic(t) => Node::Tuic(TuicOut { name: cfg.name.clone(), config: t.clone(), client: OnceCell::new() }),
         }
     }
 
@@ -62,6 +64,7 @@ impl Node {
         match (self, kind) {
             (Node::Wireguard(n), NodeKind::Wireguard(c)) => &n.config == c,
             (Node::Hysteria2(n), NodeKind::Hysteria2(c)) => &n.config == c,
+            (Node::Tuic(n), NodeKind::Tuic(c)) => &n.config == c,
             _ => false,
         }
     }
@@ -70,6 +73,7 @@ impl Node {
         match self {
             Node::Wireguard(n) => n.connect(target, resolver).await,
             Node::Hysteria2(n) => n.connect(target, resolver).await,
+            Node::Tuic(n) => n.connect(target, resolver).await,
         }
     }
 
@@ -105,6 +109,11 @@ impl Node {
                 let session = client.udp_session().await.with_context(|| format!("节点“{}”的 UDP", n.name))?;
                 Ok(UdpOut::Hysteria2 { session, remote: target.to_string() })
             }
+            Node::Tuic(n) => {
+                let client = n.client(resolver).await?;
+                let session = client.udp_session().await.with_context(|| format!("节点“{}”的 UDP", n.name))?;
+                Ok(UdpOut::Tuic { session, remote: target.to_string() })
+            }
         }
     }
 
@@ -112,7 +121,7 @@ impl Node {
     pub fn stats(&self) -> Option<supernet_wg::TunnelStats> {
         match self {
             Node::Wireguard(n) => n.stats(),
-            Node::Hysteria2(_) => None,
+            Node::Hysteria2(_) | Node::Tuic(_) => None,
         }
     }
 
@@ -121,6 +130,7 @@ impl Node {
         match self {
             Node::Wireguard(n) => n.stats().is_some(),
             Node::Hysteria2(n) => n.client.get().is_some(),
+            Node::Tuic(n) => n.client.get().is_some(),
         }
     }
 }
@@ -130,6 +140,7 @@ pub enum UdpOut {
     Direct(tokio::net::UdpSocket),
     Wireguard { socket: supernet_wg::UdpSocket, remote: SocketAddr },
     Hysteria2 { session: supernet_hy2::Hy2Udp, remote: String },
+    Tuic { session: supernet_hy2::tuic::TuicUdp, remote: String },
 }
 
 impl UdpOut {
@@ -154,6 +165,7 @@ impl UdpOut {
             }
             UdpOut::Wireguard { socket, remote } => socket.send_to(payload, *remote).await?,
             UdpOut::Hysteria2 { session, remote } => session.send_to(payload, remote)?,
+            UdpOut::Tuic { session, remote } => session.send_to(payload, remote)?,
         }
         Ok(())
     }
@@ -164,6 +176,12 @@ impl UdpOut {
             UdpOut::Direct(s) => Ok(s.recv(buf).await?),
             UdpOut::Wireguard { socket, .. } => Ok(socket.recv_from(buf).await?.0),
             UdpOut::Hysteria2 { session, .. } => {
+                let (data, _from) = session.recv_from().await.context("UDP 会话已关闭")?;
+                let n = data.len().min(buf.len());
+                buf[..n].copy_from_slice(&data[..n]);
+                Ok(n)
+            }
+            UdpOut::Tuic { session, .. } => {
                 let (data, _from) = session.recv_from().await.context("UDP 会话已关闭")?;
                 let n = data.len().min(buf.len());
                 buf[..n].copy_from_slice(&data[..n]);
@@ -201,6 +219,51 @@ impl Hy2Node {
                     password: cfg.password.clone(),
                     cert,
                     down_mbps: cfg.down_mbps,
+                })?;
+                Ok::<_, anyhow::Error>(Arc::new(client))
+            })
+            .await
+            .cloned()
+    }
+
+    pub async fn connect(&self, target: &Target, resolver: &DirectResolver) -> Result<BoxStream> {
+        let client = self.client(resolver).await?;
+        let stream = client
+            .connect_tcp(&target.to_string())
+            .await
+            .with_context(|| format!("经节点“{}”连接 {target}", self.name))?;
+        Ok(Box::new(stream))
+    }
+}
+
+/// A TUIC node: one QUIC connection, a stream per TCP connection, UDP as
+/// datagrams. Domains are sent as names, so the server resolves them.
+pub struct TuicOut {
+    pub name: String,
+    pub config: TuicNode,
+    client: OnceCell<Arc<supernet_hy2::tuic::TuicClient>>,
+}
+
+impl TuicOut {
+    async fn client(&self, resolver: &DirectResolver) -> Result<Arc<supernet_hy2::tuic::TuicClient>> {
+        self.client
+            .get_or_try_init(|| async {
+                let cfg = &self.config;
+                let server = resolve_endpoint(&cfg.server, resolver).await?;
+                let cert = match (&cfg.pin_sha256, cfg.insecure) {
+                    (Some(pin), _) => supernet_hy2::CertCheck::PinSha256(supernet_hy2::parse_hex_sha256(pin)?),
+                    (None, true) => {
+                        tracing::warn!("node {}: certificate is not verified (insecure)", self.name);
+                        supernet_hy2::CertCheck::Insecure
+                    }
+                    (None, false) => supernet_hy2::CertCheck::WebPki,
+                };
+                let client = supernet_hy2::tuic::TuicClient::new(supernet_hy2::tuic::TuicConfig {
+                    server,
+                    server_name: cfg.sni.clone().unwrap_or_else(|| cfg.host().to_string()),
+                    uuid: supernet_hy2::tuic::parse_uuid(&cfg.uuid)?,
+                    password: cfg.password.clone(),
+                    cert,
                 })?;
                 Ok::<_, anyhow::Error>(Arc::new(client))
             })
@@ -315,16 +378,25 @@ impl WgNode {
 /// Trust on first use: replace "accept any certificate" on a Hysteria2 node
 /// with a pin of the certificate the server presents now. Returns the pin.
 pub async fn pin_hysteria2_cert(node: &mut NodeConfig, resolver: &DirectResolver) -> Result<Option<String>> {
-    let NodeKind::Hysteria2(hy) = &mut node.kind else { return Ok(None) };
-    if hy.pin_sha256.is_some() || !hy.insecure {
+    let (server, sni, pin_slot, insecure) = match &mut node.kind {
+        NodeKind::Hysteria2(hy) => {
+            let sni = hy.sni.clone().unwrap_or_else(|| hy.host().to_string());
+            (hy.server.clone(), sni, &mut hy.pin_sha256, &mut hy.insecure)
+        }
+        NodeKind::Tuic(t) => {
+            let sni = t.sni.clone().unwrap_or_else(|| t.host().to_string());
+            (t.server.clone(), sni, &mut t.pin_sha256, &mut t.insecure)
+        }
+        NodeKind::Wireguard(_) => return Ok(None),
+    };
+    if pin_slot.is_some() || !*insecure {
         return Ok(None);
     }
-    let server = resolve_endpoint(&hy.server, resolver).await?;
-    let sni = hy.sni.clone().unwrap_or_else(|| hy.host().to_string());
+    let server = resolve_endpoint(&server, resolver).await?;
     let digest = supernet_hy2::fetch_cert_sha256(server, &sni).await.context("读取服务器证书")?;
     let pin = supernet_hy2::hex(&digest);
-    hy.pin_sha256 = Some(pin.clone());
-    hy.insecure = false;
+    *pin_slot = Some(pin.clone());
+    *insecure = false;
     Ok(Some(pin))
 }
 

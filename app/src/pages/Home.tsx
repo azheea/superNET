@@ -89,7 +89,7 @@ export function HomePage() {
       ))}
       {ov.nodes.length === 0 && (
         <MessageBar intent="info">
-          <MessageBarBody>还没有节点。到“节点”页粘贴 WireGuard 配置、supernet:// 或 hysteria2:// 链接即可添加。</MessageBarBody>
+          <MessageBarBody>还没有节点。到“节点”页粘贴 WireGuard 配置、supernet://、hysteria2:// 或 tuic:// 链接即可添加。</MessageBarBody>
         </MessageBar>
       )}
 

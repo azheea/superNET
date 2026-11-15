@@ -6,7 +6,7 @@ use anyhow::{bail, Context, Result};
 use base64::Engine as _;
 use ipnet::IpNet;
 
-use crate::config::{default_allowed_ips, default_keepalive, default_mtu, Hysteria2Node, NodeConfig, NodeKind, WireGuardNode};
+use crate::config::{default_allowed_ips, default_keepalive, default_mtu, Hysteria2Node, NodeConfig, NodeKind, TuicNode, WireGuardNode};
 
 const LINK_SCHEME: &str = "supernet://";
 
@@ -148,7 +148,68 @@ pub fn to_link(node: &NodeConfig) -> String {
             let query = if query.is_empty() { String::new() } else { format!("?{}", query.join("&")) };
             format!("hysteria2://{}@{}/{query}#{}", percent_encode(&hy.password), hy.server, percent_encode(&node.name))
         }
+        NodeKind::Tuic(t) => {
+            let mut query = vec!["congestion_control=bbr".to_string(), "udp_relay_mode=native".into(), "alpn=h3".into()];
+            if let Some(sni) = &t.sni {
+                query.push(format!("sni={}", percent_encode(sni)));
+            }
+            if let Some(pin) = &t.pin_sha256 {
+                // Other clients cannot pin: they need allow_insecure for a self-signed server.
+                query.push("allow_insecure=1".into());
+                query.push(format!("pinSHA256={pin}"));
+            } else if t.insecure {
+                query.push("allow_insecure=1".into());
+            }
+            format!(
+                "tuic://{}:{}@{}/?{}#{}",
+                t.uuid,
+                percent_encode(&t.password),
+                t.server,
+                query.join("&"),
+                percent_encode(&node.name)
+            )
+        }
     }
+}
+
+/// Common share link: `tuic://uuid:password@host:port/?sni=..&allow_insecure=1&pinSHA256=..#name`.
+/// With `pinSHA256` (superNET's servers) the certificate is pinned, whatever
+/// `allow_insecure` says.
+pub fn parse_tuic_link(link: &str, name: &str) -> Result<NodeConfig> {
+    let rest = link.trim().strip_prefix("tuic://").context("不是 tuic:// 链接")?;
+    let (rest, link_name) = match rest.split_once('#') {
+        Some((r, n)) => (r, percent_decode(n)?),
+        None => (rest, String::new()),
+    };
+    let (rest, query) = rest.split_once('?').unwrap_or((rest, ""));
+    let rest = rest.trim_end_matches('/');
+    let (auth, server) = rest.rsplit_once('@').context("链接缺少 UUID 和密码（uuid:password@host:port）")?;
+    let (uuid, password) = auth.split_once(':').context("链接缺少密码（uuid:password@host:port）")?;
+    let mut node = TuicNode {
+        server: server.to_string(),
+        uuid: percent_decode(uuid)?.to_ascii_lowercase(),
+        password: percent_decode(password)?,
+        sni: None,
+        pin_sha256: None,
+        insecure: false,
+    };
+    for pair in query.split('&').filter(|p| !p.is_empty()) {
+        let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+        let v = percent_decode(v)?;
+        match k {
+            "sni" | "peer" => node.sni = Some(v).filter(|s| !s.is_empty()),
+            "allow_insecure" | "insecure" | "allowInsecure" => node.insecure = v == "1" || v.eq_ignore_ascii_case("true"),
+            "pinSHA256" | "pinsha256" => node.pin_sha256 = Some(v.replace(':', "").to_ascii_lowercase()),
+            "udp_relay_mode" if v == "quic" => bail!("暂只支持 udp_relay_mode=native"),
+            _ => {}
+        }
+    }
+    if node.pin_sha256.is_some() {
+        node.insecure = false;
+    }
+    node.validate()?;
+    let name = if name.trim().is_empty() { link_name } else { name.trim().to_string() };
+    Ok(NodeConfig { name, kind: NodeKind::Tuic(node) })
 }
 
 /// Standard share link: `hysteria2://password@host:port/?sni=..&insecure=1&pinSHA256=..#name`
@@ -206,6 +267,9 @@ pub fn import(text: &str, name: &str) -> Result<NodeConfig> {
     let trimmed = text.trim();
     if trimmed.starts_with("hysteria2://") || trimmed.starts_with("hy2://") {
         return parse_hysteria2_link(trimmed, name);
+    }
+    if trimmed.starts_with("tuic://") {
+        return parse_tuic_link(trimmed, name);
     }
     if trimmed.starts_with(LINK_SCHEME) {
         let mut node = from_link(trimmed)?;
@@ -296,6 +360,30 @@ PersistentKeepalive = 15
         let back = from_link(&link).unwrap();
         assert_eq!(back, node);
         assert_eq!(import(&link, "").unwrap().name, "东京 1");
+    }
+
+    #[test]
+    fn tuic_links() {
+        let pin = "cd".repeat(32);
+        let link = format!(
+            "tuic://00112233-4455-6677-8899-AABBCCDDEEFF:p%40ss@203.0.113.10:24444/?congestion_control=bbr&udp_relay_mode=native&alpn=h3&sni=supernet.local&allow_insecure=1&pinSHA256={pin}#%E5%AE%B6"
+        );
+        let node = import(&link, "").unwrap();
+        assert_eq!(node.name, "家");
+        let NodeKind::Tuic(t) = &node.kind else { panic!("tuic node expected") };
+        assert_eq!(t.uuid, "00112233-4455-6677-8899-aabbccddeeff");
+        assert_eq!(t.password, "p@ss");
+        assert_eq!(t.server, "203.0.113.10:24444");
+        assert_eq!(t.sni.as_deref(), Some("supernet.local"));
+        assert_eq!(t.pin_sha256.as_deref(), Some(pin.as_str()));
+        assert!(!t.insecure, "a pin wins over allow_insecure");
+        let again = import(&to_link(&node), "").unwrap();
+        assert_eq!(again, node);
+        let plain = import("tuic://00112233-4455-6677-8899-aabbccddeeff:pw@h.example.com:443?allow_insecure=1", "x").unwrap();
+        let NodeKind::Tuic(t) = &plain.kind else { panic!() };
+        assert!(t.insecure);
+        assert!(import("tuic://not-a-uuid:pw@h.example.com:443", "x").is_err());
+        assert!(import("tuic://00112233-4455-6677-8899-aabbccddeeff:pw@h.example.com:443?udp_relay_mode=quic", "x").is_err());
     }
 
     #[test]
