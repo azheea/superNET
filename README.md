@@ -75,10 +75,10 @@ superNET 只用**你自己的服务器**，把两件常用的事放进同一个�
 
 | 平台 | 形式 | 代理 | TUN | 组网 | 实测情况 |
 |---|---|:-:|:-:|:-:|---|
-| **Windows**（x64 / ARM64） | 应用 + 命令行 | ✅ | ✅ wintun，WFP 防 DNS 泄漏 | ✅ | 实机 |
-| **Android** | 应用（VpnService，前台服务） | ✅ | ✅ | ✅ | 模拟器，含局域网直连组网 |
+| **Windows**（x64 / ARM64 / x86） | 应用 + 命令行 | ✅ | ✅ wintun，WFP 防 DNS 泄漏 | ✅ | 实机 |
+| **Android**（arm64 / armv7 / x86_64） | 应用（VpnService，前台服务） | ✅ | ✅ | ✅ | 模拟器，含局域网直连组网 |
 | **macOS** | 应用 + 命令行 | ✅ 系统代理 | ✅ 需 root，经命令行版 | ✅ | M4 MacBook Air 实机 |
-| **Linux 服务器** | 命令行 + 网页控制台 + systemd | ✅ | ✅ 全局或只组网 | ✅ | 服务器和 Ubuntu 虚拟机 |
+| **Linux 服务器**（x86_64 / aarch64 / armv7） | 命令行 + 网页控制台 + systemd | ✅ | ✅ 全局或只组网 | ✅ | 服务器和 Ubuntu 虚拟机 |
 | **Linux 桌面** | deb 包（应用 + 命令行，amd64 / arm64） | ✅ | ✅ 需 root，经命令行版 | ✅ | Ubuntu 24.04 arm64 实机运行；amd64 由 CI 构建 |
 | **iOS** | SwiftUI 应用 + Packet Tunnel 扩展 | ✅ | ✅ | ✅ | 编译通过，模拟器跑过界面；装到真机需要付费开发者账号 |
 

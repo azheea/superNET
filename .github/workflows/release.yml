@@ -34,14 +34,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { runner: windows-latest, arch: x64, wintun: amd64 }
-          - { runner: windows-11-arm, arch: arm64, wintun: arm64 }
+          - { runner: windows-latest, arch: x64, target: x86_64-pc-windows-msvc, wintun: amd64 }
+          - { runner: windows-11-arm, arch: arm64, target: aarch64-pc-windows-msvc, wintun: arm64 }
+          - { runner: windows-latest, arch: x86, target: i686-pc-windows-msvc, wintun: x86 }
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: npm, cache-dependency-path: app/package-lock.json }
       - uses: dtolnay/rust-toolchain@stable
+        with: { targets: "${{ matrix.target }}" }
       - uses: Swatinem/rust-cache@v2
         with: { key: "${{ matrix.arch }}", cache-on-failure: true, save-if: "${{ !startsWith(github.ref, 'refs/tags/') }}" }
       - name: sccache (workspace crates)
@@ -61,21 +63,22 @@ jobs:
           npm run build
       - name: App and CLI
         run: |
-          cargo build --release -p supernet-app --features tauri/custom-protocol
-          cargo build --release -p supernet-cli
+          cargo build --release --target ${{ matrix.target }} -p supernet-app --features tauri/custom-protocol
+          cargo build --release --target ${{ matrix.target }} -p supernet-cli
       - name: wintun.dll (verified hash and signature)
         shell: pwsh
         run: ./scripts/fetch-wintun.ps1 -Arch ${{ matrix.wintun }}
       - name: Package
         shell: pwsh
         run: |
+          $bin = "target/${{ matrix.target }}/release"
           $d = New-Item -ItemType Directory -Force out/superNET-windows-${{ matrix.arch }}
-          Copy-Item target/release/supernet-app.exe "$d/superNET.exe"
+          Copy-Item "$bin/supernet-app.exe" "$d/superNET.exe"
           # Not "supernet.exe": Windows file names ignore case, that would replace superNET.exe.
-          Copy-Item target/release/supernet.exe "$d/supernet-cli.exe"
+          Copy-Item "$bin/supernet.exe" "$d/supernet-cli.exe"
           Copy-Item local/wintun/wintun.dll, local/wintun/LICENSE.txt $d
           Rename-Item "$d/LICENSE.txt" wintun-LICENSE.txt
-          if (Test-Path target/release/WebView2Loader.dll) { Copy-Item target/release/WebView2Loader.dll $d }
+          if (Test-Path "$bin/WebView2Loader.dll") { Copy-Item "$bin/WebView2Loader.dll" $d }
           Copy-Item README.md, LICENSE-MIT, LICENSE-APACHE $d
           $names = (Get-ChildItem $d).Name
           foreach ($n in 'superNET.exe', 'supernet-cli.exe', 'wintun.dll') { if ($names -notcontains $n) { throw "missing $n" } }
@@ -144,6 +147,39 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: "linux-${{ matrix.arch }}", path: out/*, if-no-files-found: error }
 
+  # 32-bit ARM (Raspberry Pi OS 32-bit, routers, NAS): the static CLI and the
+  # coordinator, cross-built with Zig, then run once under QEMU.
+  linux-armv7:
+    runs-on: ubuntu-22.04
+    env:
+      TARGET: armv7-unknown-linux-musleabihf
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm, cache-dependency-path: app/package-lock.json }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: armv7-unknown-linux-musleabihf }
+      - uses: Swatinem/rust-cache@v2
+        with: { key: armv7, cache-on-failure: true, save-if: "${{ !startsWith(github.ref, 'refs/tags/') }}" }
+      - name: Frontend (embedded in the CLI's web console)
+        working-directory: app
+        run: npm ci && npm run build
+      - name: Zig and cargo-zigbuild
+        run: pip3 install --user ziglang cargo-zigbuild
+      - name: Static CLI and coordinator
+        run: cargo zigbuild --release --target "$TARGET" -p supernet-cli -p supernet-coord
+      - name: Package and smoke test (QEMU)
+        run: |
+          mkdir -p out
+          cp target/$TARGET/release/supernet out/supernet-linux-armv7
+          cp target/$TARGET/release/supernet-coord out/supernet-coord-linux-armv7
+          file out/*
+          sudo apt-get update && sudo apt-get install -y qemu-user-static
+          qemu-arm-static out/supernet-linux-armv7 --help | head -3
+          qemu-arm-static out/supernet-coord-linux-armv7 help | head -2
+      - uses: actions/upload-artifact@v4
+        with: { name: linux-armv7, path: out/*, if-no-files-found: error }
+
   macos:
     runs-on: macos-latest
     steps:
@@ -205,7 +241,7 @@ jobs:
             app/src-tauri/gen/android/**/*.gradle*
             app/src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties
       - uses: dtolnay/rust-toolchain@stable
-        with: { targets: "aarch64-linux-android,x86_64-linux-android" }
+        with: { targets: "aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android" }
       - uses: Swatinem/rust-cache@v2
         with: { cache-on-failure: true, save-if: "${{ !startsWith(github.ref, 'refs/tags/') }}" }
       - name: sccache (workspace crates)
@@ -249,18 +285,20 @@ jobs:
         working-directory: app
         run: |
           if [ "$SIGNED" = 1 ]; then
-            npx tauri android build --apk --split-per-abi --target aarch64 --target x86_64
+            npx tauri android build --apk --split-per-abi --target aarch64 --target armv7 --target x86_64
           else
-            npx tauri android build --apk --split-per-abi --debug --target aarch64 --target x86_64
+            npx tauri android build --apk --split-per-abi --debug --target aarch64 --target armv7 --target x86_64
           fi
       - name: Package
         run: |
           mkdir -p out
           kind=$([ "$SIGNED" = 1 ] && echo release || echo debug)
-          for abi in arm64 x86_64; do
-            f=$(find app/src-tauri/gen/android/app/build/outputs/apk -name "*${abi}*${kind}*.apk" | head -1)
-            [ -n "$f" ] || { echo "no $abi APK"; find app/src-tauri/gen/android/app/build/outputs/apk -name '*.apk'; exit 1; }
-            cp "$f" "out/superNET-android-${abi}$([ "$kind" = debug ] && echo -debug).apk"
+          # Gradle flavour -> published name ("arm" is 32-bit armeabi-v7a; exact names, "arm" is a prefix of "arm64").
+          for pair in arm64:arm64 arm:armv7 x86_64:x86_64; do
+            flavor=${pair%%:*}; name=${pair##*:}
+            f=$(find app/src-tauri/gen/android/app/build/outputs/apk -name "app-${flavor}-${kind}.apk" | head -1)
+            [ -n "$f" ] || { echo "no $flavor APK"; find app/src-tauri/gen/android/app/build/outputs/apk -name '*.apk'; exit 1; }
+            cp "$f" "out/superNET-android-${name}$([ "$kind" = debug ] && echo -debug).apk"
           done
           rm -f local/android-release.jks local/android-keystore.properties
           ls -la out
@@ -296,7 +334,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, linux, macos, android, ios]
+    needs: [windows, linux, linux-armv7, macos, android, ios]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -316,12 +354,12 @@ jobs:
 
           | 平台 | 文件 |
           |---|---|
-          | Windows | `superNET-windows-x64.zip`（Intel / AMD）/ `superNET-windows-arm64.zip`（骁龙等 ARM 电脑）：解压后运行 `superNET.exe`（命令行版是 `supernet-cli.exe`）。TUN 模式需要管理员权限，`wintun.dll` 已附带 |
+          | Windows | `superNET-windows-x64.zip`（Intel / AMD 64 位）/ `superNET-windows-arm64.zip`（骁龙等 ARM 电脑）/ `superNET-windows-x86.zip`（32 位系统）：解压后运行 `superNET.exe`（命令行版是 `supernet-cli.exe`）。TUN 模式需要管理员权限，`wintun.dll` 已附带 |
           | macOS（Apple 芯片和 Intel） | `superNET-macos-universal.dmg`。未公证，第一次请右键选“打开”。TUN 和组网用应用包里的 `supernet-cli`（需要 sudo） |
           | Linux 桌面 | `superNET_*_amd64.deb` / `superNET_*_arm64.deb`：`sudo apt install ./superNET_*.deb` |
-          | Linux 服务器 | `supernet-linux-x86_64` / `supernet-linux-aarch64`：静态程序，`sudo ./supernet-linux-x86_64 join 邀请链接 --install-service` |
-          | 协调服务 | `supernet-coord-linux-x86_64` / `supernet-coord-linux-aarch64` |
-          | Android | `superNET-android-arm64*.apk`（手机）/ `superNET-android-x86_64*.apk`（模拟器） |
+          | Linux 服务器 | `supernet-linux-x86_64` / `supernet-linux-aarch64` / `supernet-linux-armv7`（32 位树莓派、路由器）：静态程序，`sudo ./supernet-linux-x86_64 join 邀请链接 --install-service` |
+          | 协调服务 | `supernet-coord-linux-x86_64` / `supernet-coord-linux-aarch64` / `supernet-coord-linux-armv7` |
+          | Android | `superNET-android-arm64*.apk`（大多数手机）/ `superNET-android-armv7*.apk`（老的 32 位手机）/ `superNET-android-x86_64*.apk`（模拟器） |
 
           iOS 需要自己用付费开发者账号签名，见 [ios/README.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/ios/README.md)。
 
